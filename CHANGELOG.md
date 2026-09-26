@@ -7,8 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Stream sinks**: `logger.add()` accepts any object with a callable `write()` (e.g. `io.StringIO`, a redirected `sys.stdout`). Only `sys.__stdout__` / `sys.__stderr__` use the Rust fast path. Item 1 from issue #59
+
 ### Changed
 - **Color markup is stripped from non-colorized output**: Item 3 from issue #59
+
+### Fixed
+- **Callable sinks include tracebacks**: formatted callable sinks now append the exception text, the same as file and console sinks.
 
 ## [0.4.2] - 2026-08-06
 
