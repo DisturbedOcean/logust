@@ -1455,6 +1455,12 @@ impl PyLogger {
     }
 }
 
+/// Remove known color markup tags from `text`, keeping unknown tags as literal text.
+#[pyfunction]
+fn strip_color_markup(text: &str) -> std::borrow::Cow<'_, str> {
+    format::apply_color_markup(text, false)
+}
+
 #[pymodule]
 fn _logust(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<LogLevel>()?;
@@ -1462,6 +1468,8 @@ fn _logust(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Rotation>()?;
 
     m.add_class::<PyLogger>()?;
+
+    m.add_function(wrap_pyfunction!(strip_color_markup, m)?)?;
 
     let default_logger = Py::new(py, PyLogger::new(None))?;
     m.add("logger", default_logger)?;
