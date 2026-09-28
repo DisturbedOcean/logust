@@ -376,4 +376,8 @@ class PyLogger:
         """Output CRITICAL level log message."""
         ...
 
+def strip_color_markup(text: str) -> str:
+    """Remove known color markup tags, keeping unknown tags as literal text."""
+    ...
+
 logger: PyLogger

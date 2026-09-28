@@ -10,6 +10,8 @@ import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from ._logust import strip_color_markup
+
 if TYPE_CHECKING:
     pass
 
@@ -221,7 +223,7 @@ class ParsedCallableTemplate:
                     elif key == "process":
                         value = process_str
                     elif key == "message":
-                        value = record.get("message", "")
+                        value = strip_color_markup(record.get("message", ""))
                     else:
                         value = ""
 

@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::sync::LazyLock;
@@ -305,11 +306,11 @@ fn tag_to_ansi(tag: &str) -> Option<&'static str> {
     }
 }
 
-/// Parse and apply color markup tags to text
-/// Supports: <red>, <bold>, <italic>, etc.
-pub fn apply_color_markup(text: &str) -> String {
+/// Parse color markup tags (<red>, <bold>, <italic>, etc.) and render them as ANSI codes,
+/// or strip them if `colorize` is false. Unknown tags are kept as literal text.
+pub fn apply_color_markup(text: &str, colorize: bool) -> Cow<'_, str> {
     if !text.contains('<') {
-        return text.to_string();
+        return Cow::Borrowed(text);
     }
 
     let mut result = String::with_capacity(text.len());
@@ -346,9 +347,11 @@ pub fn apply_color_markup(text: &str) -> String {
             if is_closing {
                 if tag_to_ansi(&tag).is_some() && !style_stack.is_empty() {
                     style_stack.pop();
-                    result.push_str("\x1b[0m");
-                    for s in &style_stack {
-                        result.push_str(s);
+                    if colorize {
+                        result.push_str("\x1b[0m");
+                        for s in &style_stack {
+                            result.push_str(s);
+                        }
                     }
                 } else {
                     result.push_str("</");
@@ -357,7 +360,9 @@ pub fn apply_color_markup(text: &str) -> String {
                 }
             } else if let Some(ansi) = tag_to_ansi(&tag) {
                 style_stack.push(ansi);
-                result.push_str(ansi);
+                if colorize {
+                    result.push_str(ansi);
+                }
             } else {
                 result.push('<');
                 result.push_str(&tag);
@@ -368,11 +373,11 @@ pub fn apply_color_markup(text: &str) -> String {
         }
     }
 
-    if !style_stack.is_empty() {
+    if colorize && !style_stack.is_empty() {
         result.push_str("\x1b[0m");
     }
 
-    result
+    Cow::Owned(result)
 }
 
 /// Format configuration for log output
@@ -482,12 +487,9 @@ impl FormatConfig {
             None
         };
 
-        // Lazy message formatting - only for colorized output (non-color uses `record.message` in-token)
-        let message_fmt_color = if colorize && reqs.needs_message {
-            Some(apply_color_markup(&record.message))
-        } else {
-            None
-        };
+        let message_fmt = reqs
+            .needs_message
+            .then(|| apply_color_markup(&record.message, colorize));
 
         let mut result = String::with_capacity(self.template.len() + FORMAT_RESULT_CAPACITY);
 
@@ -500,10 +502,8 @@ impl FormatConfig {
                     }
                 }
                 FormatToken::Message => {
-                    if let Some(ref fmt) = message_fmt_color {
+                    if let Some(ref fmt) = message_fmt {
                         result.push_str(fmt);
-                    } else if reqs.needs_message {
-                        result.push_str(&record.message);
                     }
                 }
                 FormatToken::Level => {
@@ -666,11 +666,9 @@ impl FormatConfig {
             None
         };
 
-        let message_fmt_color = if colorize && reqs.needs_message {
-            Some(apply_color_markup(message))
-        } else {
-            None
-        };
+        let message_fmt = reqs
+            .needs_message
+            .then(|| apply_color_markup(message, colorize));
 
         let mut result = String::with_capacity(self.template.len() + FORMAT_RESULT_CAPACITY);
 
@@ -683,10 +681,8 @@ impl FormatConfig {
                     }
                 }
                 FormatToken::Message => {
-                    if let Some(ref fmt) = message_fmt_color {
+                    if let Some(ref fmt) = message_fmt {
                         result.push_str(fmt);
-                    } else if reqs.needs_message {
-                        result.push_str(message);
                     }
                 }
                 FormatToken::Level => {
@@ -845,7 +841,7 @@ mod tests {
 
     #[test]
     fn test_color_markup_basic() {
-        let result = apply_color_markup("<red>error</red>");
+        let result = apply_color_markup("<red>error</red>", true);
         assert!(result.contains("\x1b[31m"));
         assert!(result.contains("\x1b[0m"));
         assert!(result.contains("error"));
@@ -853,7 +849,7 @@ mod tests {
 
     #[test]
     fn test_color_markup_nested() {
-        let result = apply_color_markup("<bold><green>success</green></bold>");
+        let result = apply_color_markup("<bold><green>success</green></bold>", true);
         assert!(result.contains("\x1b[1m"));
         assert!(result.contains("\x1b[32m"));
         assert!(result.contains("success"));
@@ -861,25 +857,32 @@ mod tests {
 
     #[test]
     fn test_color_markup_invalid_tag() {
-        let result = apply_color_markup("<invalid>text</invalid>");
+        let result = apply_color_markup("<invalid>text</invalid>", true);
         assert_eq!(result, "<invalid>text</invalid>");
     }
 
     #[test]
     fn test_color_markup_no_tags() {
-        let result = apply_color_markup("plain text");
+        let result = apply_color_markup("plain text", true);
         assert_eq!(result, "plain text");
     }
 
     #[test]
+    fn test_color_markup_strip() {
+        let result =
+            apply_color_markup("<bold><green>ok</green></bold> <nope>x</nope></red>", false);
+        assert_eq!(result, "ok <nope>x</nope></red>");
+    }
+
+    #[test]
     fn test_color_markup_styles() {
-        let bold = apply_color_markup("<bold>text</bold>");
+        let bold = apply_color_markup("<bold>text</bold>", true);
         assert!(bold.contains("\x1b[1m"));
 
-        let italic = apply_color_markup("<italic>text</italic>");
+        let italic = apply_color_markup("<italic>text</italic>", true);
         assert!(italic.contains("\x1b[3m"));
 
-        let underline = apply_color_markup("<underline>text</underline>");
+        let underline = apply_color_markup("<underline>text</underline>", true);
         assert!(underline.contains("\x1b[4m"));
     }
 
