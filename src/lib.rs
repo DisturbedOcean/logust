@@ -1267,6 +1267,9 @@ impl PyLogger {
         if req.needs_message {
             let _ = dict.set_item(intern!(py, "message"), &record.message);
         }
+        if let Some(ref exc) = record.exception {
+            let _ = dict.set_item(intern!(py, "exception"), exc.as_str());
+        }
         if req.needs_nested_extra {
             let extra_dict = PyDict::new(py);
             if req.extra_keys.is_empty() {

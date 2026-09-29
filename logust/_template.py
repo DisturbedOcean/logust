@@ -235,4 +235,9 @@ class ParsedCallableTemplate:
                 else:
                     parts.append(str(value))
 
+        exception = record.get("exception")
+        if exception:
+            parts.append("\n")
+            parts.append(exception)
+
         return "".join(parts)

@@ -1128,8 +1128,11 @@ class Logger:
         """Add a handler (file, console, or callable sink).
 
         Args:
-            sink: Path to the log file (str or Path object), sys.stdout/sys.stderr,
-                  or a callable that receives formatted log messages.
+            sink: Path to the log file (str or Path object), a stream (any object
+                  with a write() method, e.g. sys.stdout or io.StringIO), or a
+                  callable that receives formatted log messages. A stream is
+                  bound when add() is called; a later swap of sys.stdout is not
+                  observed.
             level: Minimum log level for this handler.
             format: Custom format string (e.g., "{time} | {level} | {message}").
             rotation: Rotation strategy ("daily", "hourly", "500 MB", etc.)
@@ -1170,8 +1173,12 @@ class Logger:
         """
         import sys
 
-        # Check for callable sink first (before checking stdout/stderr)
-        if callable(sink) and sink not in (sys.stdout, sys.stderr):
+        # A replaced sys.stdout (rich, Jupyter, redirect_stdout) must get output via its write().
+        is_console = sink is sys.__stdout__ or sink is sys.__stderr__
+        if not is_console and callable(getattr(sink, "write", None)):
+            sink = self._stream_writer(cast("TextIO", sink))
+
+        if callable(sink) and not is_console:
             handler_id = self._add_callable_sink(
                 sink,
                 level=level,
@@ -1195,8 +1202,8 @@ class Logger:
             self._invalidate_requirements_cache()
             return handler_id
 
-        if sink is sys.stdout or sink is sys.stderr:
-            stream_name = "stdout" if sink is sys.stdout else "stderr"
+        if is_console:
+            stream_name = "stdout" if sink is sys.__stdout__ else "stderr"
             resolved_level = _to_log_level(level) if level is not None else None
             resolved_colorize = colorize
             if resolved_colorize is None:
@@ -1244,6 +1251,19 @@ class Logger:
             self._filter_ids.add(handler_id)
         self._invalidate_requirements_cache()
         return handler_id
+
+    @staticmethod
+    def _stream_writer(stream: TextIO) -> Callable[[str], None]:
+        flush = getattr(stream, "flush", None)
+        if not callable(flush):
+            flush = None
+
+        def write(message: str) -> None:
+            stream.write(message + "\n")
+            if flush is not None:
+                flush()
+
+        return write
 
     def _add_callable_sink(
         self,
